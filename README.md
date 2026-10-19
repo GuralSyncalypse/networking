@@ -7,6 +7,7 @@ Monorepo chứa các công cụ cá nhân, mỗi tool nằm trong một thư m�
 | Tool | Mô tả | Thư mục |
 | --- | --- | --- |
 | **ZeroHost** | Chia sẻ thư mục cục bộ ra Internet qua Cloudflare Tunnel, có giao diện Tkinter và tự động cập nhật URL lên gateway (Render). | [`tools/zerohost`](tools/zerohost) |
+| **Mini Gateway** | TCP reverse proxy Layer 4 (1-1) hiệu năng cao viết bằng Java 11 + Netty, chuyển tiếp cổng 8080 sang backend 9999. | [`tools/mini-gateway`](tools/mini-gateway) |
 
 > Thêm tool mới: tạo thư mục `tools/<tên-tool>/`, đặt mã nguồn + `README.md` riêng, rồi bổ sung một dòng vào bảng trên.
 
@@ -17,11 +18,15 @@ networking/
 ├─ README.md            # Mục lục (file này)
 ├─ .gitignore
 └─ tools/
-   └─ zerohost/         # Cloudflare Tunnel Host
+   ├─ zerohost/         # Cloudflare Tunnel Host
+   │  ├─ README.md
+   │  ├─ host.py
+   │  ├─ host.exe        (không commit – xem .gitignore)
+   │  └─ cloudflared.exe (không có sẵn – tự tải về)
+   └─ mini-gateway/     # Netty TCP Reverse Proxy (Java)
       ├─ README.md
-      ├─ host.py
-      ├─ host.exe        (không commit – xem .gitignore)
-      └─ cloudflared.exe (không có sẵn – tự tải về)
+      ├─ pom.xml
+      └─ src/
 ```
 
 ## Quy ước
