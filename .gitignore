@@ -1,0 +1,24 @@
+# Build artifacts
+build/
+dist/
+*.spec
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# Binaries (phân phối qua GitHub Releases, không commit vào git)
+*.exe
+*.dll
+*.pyd
+
+# PyInstaller runtime / tạm
+_MEI*/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
