@@ -154,7 +154,7 @@ So với bản Windows:
 | --- | --- | --- |
 | `DEFAULT_GATEWAY_UPDATE_URL` | Endpoint nhận URL công khai | `https://pgt-energy.onrender.com/_gateway/update` |
 | `UPDATE_TOKEN` | Token Bearer gửi kèm request | (trống → bỏ qua bước gateway) |
-| `PUBLIC_URL` | URL cố định đã có sẵn; **đặt là bỏ qua quick tunnel** | (trống → chạy tunnel) |
+| `PUBLIC_URL` | URL cố định đã có sẵn; **đặt là bỏ qua quick tunnel** (thiếu `https://` sẽ tự thêm) | (trống → chạy tunnel) |
 | `HOST_DIR` | Thư mục cần chia sẻ | thư mục hiện tại |
 | `PORT` | Cổng HTTP server cục bộ | `8000` |
 
@@ -165,23 +165,43 @@ Request gửi đi giống hệt bản Windows (`POST` JSON `{"url": "..."}` + `A
 ### Hành vi
 
 - Có `PUBLIC_URL` → **không** chạy `cloudflared`; chỉ POST URL đó lên gateway. HTTP server cục bộ vẫn chạy để named tunnel (nếu có) trỏ vào.
-- Không có `PUBLIC_URL` → chạy `cloudflared tunnel --url http://localhost:<port>`, bắt URL `*.trycloudflare.com` từ stdout rồi POST lên gateway.
+- Không có `PUBLIC_URL` → chạy `cloudflared tunnel --url http://127.0.0.1:<port>`, bắt URL `*.trycloudflare.com` từ stdout rồi POST lên gateway.
+- `--no-server -p <port>` → **không** dựng static server, cloudflared trỏ thẳng tới dịch vụ đang chạy sẵn ở cổng đó (Odoo, nginx, app Node...). Dùng khi cổng đã bị chiếm bởi ứng dụng khác.
 - Thiếu `UPDATE_TOKEN` → cảnh báo và bỏ qua gateway; server/tunnel vẫn chạy bình thường.
 - Gọi gateway có retry (mặc định 3 lần, cách 5 giây) với lỗi mạng, HTTP 5xx, 408, 429; các lỗi 4xx khác không retry.
 - `--no-server --public-url ...` → chế độ một lần: chỉ POST URL rồi thoát (hợp với cron).
 - `Ctrl+C` / `SIGTERM` → dừng `cloudflared` và HTTP server sạch sẽ.
 - Mã thoát: `0` bình thường, `1` lỗi khi chạy, `2` cấu hình sai.
 
+### Chia sẻ dịch vụ đang chạy sẵn (Odoo, nginx, Node...)
+
+`host_linux.py` không phải reverse proxy: mặc định nó **tự bind** cổng `-p` để phục vụ thư mục. Nếu cổng đó đã có ứng dụng chạy (ví dụ Odoo ở `8069`), bạn sẽ gặp:
+
+```
+[ERROR] Không mở được HTTP server tại port 8069: [Errno 98] Address already in use
+```
+
+Khi đó thêm `--no-server` để bỏ static server, cloudflared trỏ thẳng vào dịch vụ có sẵn:
+
+```bash
+# Odoo đang chạy ở 127.0.0.1:8069
+./host_linux.py --no-server -p 8069 -d /opt/odoo   # -d chỉ để log, không dùng
+```
+
+Lưu ý khi đặt Odoo sau Cloudflare Tunnel:
+- Bật `proxy_mode = True` trong `odoo.conf` để Odoo nhận đúng header `X-Forwarded-*`.
+- Nếu dùng nhiều database, cấu hình `dbfilter` theo hostname `*.trycloudflare.com` (hostname đổi mỗi lần chạy quick tunnel) hoặc dùng named tunnel + `PUBLIC_URL` cố định.
+
 Các tùy chọn CLI chính (xem đầy đủ bằng `./host_linux.py --help`):
 
 ```
 -d, --dir DIR            Thư mục chia sẻ (ghi đè HOST_DIR)
--p, --port PORT          Cổng HTTP server (ghi đè PORT)
+-p, --port PORT          Cổng HTTP server; với --no-server là cổng dịch vụ có sẵn
     --env PATH           Đường dẫn file .env
     --gateway-url URL    Ghi đè DEFAULT_GATEWAY_UPDATE_URL
     --token TOKEN        Ghi đè UPDATE_TOKEN
     --public-url URL     URL cố định, bỏ qua quick tunnel
-    --no-server          Không chạy HTTP server
+    --no-server          Không dựng static server, tunnel trỏ tới dịch vụ có sẵn
     --no-tunnel          Không chạy cloudflared
     --no-update          Không gọi API gateway
     --retries N          Số lần thử gọi gateway (mặc định 3)

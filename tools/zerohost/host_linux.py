@@ -192,10 +192,13 @@ def build_config(args):
     """Trả về (Config | None, danh sách lỗi)."""
     errors = []
 
+    serve = not args.no_server
+
     directory = Path(
         args.dir or _env_value("HOST_DIR") or os.getcwd()
     ).expanduser()
-    if not directory.is_dir():
+    # Với --no-server, thư mục không được dùng để phục vụ nên không cần tồn tại.
+    if serve and not directory.is_dir():
         errors.append("Thư mục không tồn tại hoặc không phải thư mục: %s" % directory)
 
     port_raw = args.port if args.port is not None else _env_value("PORT", str(DEFAULT_PORT))
@@ -208,7 +211,10 @@ def build_config(args):
         if not 1 <= port <= 65535:
             errors.append("PORT phải trong khoảng 1..65535: %d" % port)
 
-    public_url = args.public_url or _env_value("PUBLIC_URL")
+    public_url = (args.public_url or _env_value("PUBLIC_URL") or "").strip()
+    if public_url and "://" not in public_url:
+        public_url = "https://" + public_url
+        log("WARN", "PUBLIC_URL thiếu scheme, tự thêm https:// -> %s" % public_url)
     if public_url and not re.match(r"^https?://[^\s/]+", public_url):
         errors.append("PUBLIC_URL phải bắt đầu bằng http:// hoặc https://: %s" % public_url)
 
@@ -225,7 +231,6 @@ def build_config(args):
 
     token = args.token or _env_value("UPDATE_TOKEN", fallback_name="GATEWAY_UPDATE_TOKEN")
 
-    serve = not args.no_server
     tunnel = not args.no_tunnel and not public_url
     update_enabled = not args.no_update
 
@@ -251,10 +256,10 @@ def build_config(args):
                 "cạnh host_linux.py (nhớ chmod +x)."
             )
 
-    if not serve and not public_url:
+    if not serve and not tunnel and not public_url:
         errors.append(
-            "Chế độ --no-server chỉ dùng được khi có PUBLIC_URL "
-            "(chỉ đẩy URL lên gateway, không chạy server/tunnel)."
+            "Không có gì để chạy: --no-server + --no-tunnel cần PUBLIC_URL "
+            "để đẩy URL lên gateway."
         )
 
     if errors:
@@ -473,7 +478,15 @@ def parse_args(argv=None):
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     parser.add_argument("-d", "--dir", help="Thư mục cần chia sẻ (ghi đè HOST_DIR)")
-    parser.add_argument("-p", "--port", type=int, help="Cổng HTTP server cục bộ (ghi đè PORT)")
+    parser.add_argument(
+        "-p",
+        "--port",
+        type=int,
+        help=(
+            "Cổng HTTP server cục bộ (ghi đè PORT). Với --no-server, đây là "
+            "cổng của dịch vụ đang chạy sẵn mà cloudflared sẽ trỏ tới"
+        ),
+    )
     parser.add_argument("--env", help="Đường dẫn file .env (mặc định: cạnh script hoặc CWD)")
     parser.add_argument("--gateway-url", help="Ghi đè DEFAULT_GATEWAY_UPDATE_URL")
     parser.add_argument("--token", help="Ghi đè UPDATE_TOKEN")
@@ -524,14 +537,27 @@ def main(argv=None):
         return 2
 
     log("INFO", "Thư mục chia sẻ : %s" % cfg.directory)
-    log("INFO", "Port cục bộ    : %d" % cfg.port)
+    if cfg.serve:
+        log("INFO", "Port cục bộ    : %d (server nội bộ bind cổng này)" % cfg.port)
+    elif cfg.tunnel:
+        log(
+            "INFO",
+            "Port dịch vụ   : %d (--no-server: cloudflared trỏ tới dịch vụ có sẵn, không bind)"
+            % cfg.port,
+        )
+    else:
+        log("INFO", "Port cục bộ    : %d (không dùng)" % cfg.port)
     log("INFO", "Gateway        : %s" % (cfg.gateway_url or "(không dùng)"))
     log("INFO", "Token          : %s" % _mask(cfg.token))
     log("INFO", "Chế độ         : %s" % ("PUBLIC_URL cố định" if cfg.public_url else "quick tunnel"))
     log(
         "INFO",
         "HTTP server    : %s"
-        % ("bật" if cfg.serve else "tắt (--no-server)"),
+        % (
+            "bật (phục vụ thư mục)"
+            if cfg.serve
+            else "tắt (--no-server, dùng dịch vụ đang chạy sẵn)"
+        ),
     )
 
     stop_event = threading.Event()
@@ -545,6 +571,11 @@ def main(argv=None):
             httpd = start_http_server(cfg.directory, cfg.port)
         except OSError as exc:
             log("ERROR", "Không mở được HTTP server tại port %d: %s" % (cfg.port, exc))
+            log(
+                "INFO",
+                "Nếu port %d đã có dịch vụ khác chạy (vd. Odoo), dùng: "
+                "./host_linux.py --no-server -p %d" % (cfg.port, cfg.port),
+            )
             return 1
         log("INFO", "HTTP server đang chạy tại http://localhost:%d" % cfg.port)
 
